@@ -1,8 +1,5 @@
-<<<<<<< HEAD
-# Spectrogram Generator Documentation
-=======
 # sBitx Spectrogram Generator
->>>>>>> 98fa1a060217510185ab07b0daa67dfcb759f383
+
 
 This application allows you to convert text or images into spectrograms that can be transmitted via radio. It supports both a graphical user interface (GUI) and command-line operation.
 
