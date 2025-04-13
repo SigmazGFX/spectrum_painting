@@ -71,7 +71,7 @@ The application can be run from the command line with various options:
 
 ### Basic Usage
 ```bash
-python3 spectrogram-generator.py --text "Hello World" --output my_spectrogram.wav
+python3 spectrogram-generator.py --text "Hello World" --output spectrogram.wav
 ```
 
 This generates a spectrogram WAV file without displaying the GUI.
