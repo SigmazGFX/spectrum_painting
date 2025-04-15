@@ -911,23 +911,59 @@ if __name__ == "__main__":
             # Set the output file path
             temp_app.output_file = args.output
             
+            # Create a minimal window to show just the waterfall display
+            waterfall_window = Gtk.Window(title="Spectrogram Transmission")
+            waterfall_window.set_default_size(400, 200)
+            waterfall_window.set_border_width(10)
+            waterfall_window.set_position(Gtk.WindowPosition.CENTER)  # Center on screen
+            waterfall_window.set_decorated(False)  # Remove window decorations (title bar, etc.)
+            
+            # Create a vertical box to hold the waterfall and status
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            waterfall_window.add(vbox)
+            
+            # Add the waterfall display area
+            waterfall_area = Gtk.DrawingArea()
+            waterfall_area.set_size_request(400, 150)
+            waterfall_area.connect("draw", temp_app.draw_waterfall)
+            vbox.pack_start(waterfall_area, True, True, 0)
+            
+            # Add a status label
+            status_label = Gtk.Label(label=f"Transmitting in {current_mode} mode...")
+            vbox.pack_start(status_label, False, False, 0)
+            
+            # Set up the waterfall display
+            temp_app.waterfall_area = waterfall_area
+            temp_app.waterfall_data = []
+            
+            # Show the window
+            waterfall_window.show_all()
+            
             # Play the audio (non-blocking)
             print(f"Transmitting audio from {args.output} in {current_mode} mode...")
             temp_app.play_audio()
             
-            # Wait for playback to complete
-            while temp_app.is_playing:
-                # Process GTK events while waiting
-                while Gtk.events_pending():
-                    Gtk.main_iteration()
-                time.sleep(0.1)
-                
-            print("Transmission complete.")
+            # Set up a timer to update the status and close when done
+            def check_playback_status():
+                if not temp_app.is_playing:
+                    status_label.set_text("Transmission complete. Closing...")
+                    # Schedule window close after a short delay
+                    GLib.timeout_add(1000, Gtk.main_quit)
+                    return False  # Stop the timer
+                return True  # Continue the timer
+            
+            # Check status every 100ms
+            GLib.timeout_add(100, check_playback_status)
+            
+            # Run the GTK main loop
+            Gtk.main()
             
             # Clean up
             if temp_app and hasattr(temp_app, 'close_hamlib'):
                 temp_app.close_hamlib()
             
+            print("Transmission complete.")
+        
         sys.exit(0 if success else 1)
     else:
         if not Gtk.init_check()[0]:
@@ -937,4 +973,3 @@ if __name__ == "__main__":
         win.connect("destroy", Gtk.main_quit)
         win.show_all()
         Gtk.main()
-        
