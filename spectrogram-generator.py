@@ -35,7 +35,7 @@ def genSine(freq=2000, volume=100, duration=3, phase=0, sampleRate=88200):
     sine_wave = np.interp((freq * t) % sampleRate, np.arange(SINE_TABLE_SIZE) * (sampleRate / SINE_TABLE_SIZE), sine_table)
     edge_size = int(numSamples * 0.15)
     window = np.ones(numSamples)
-    edge = np.hanning(edge_size * 2)
+    edge = np.blackman(edge_size * 2)  
     window[:edge_size] = edge[:edge_size]
     window[-edge_size:] = edge[edge_size:]
     sine_wave = sine_wave * window
@@ -84,6 +84,34 @@ def create_spectrogram(text=None, image_path=None, output_file="spectrogram.wav"
             text_x = (text_width - bbox[2]) // 1
             text_y = (text_height - bbox[3]) // 2
             draw.text((text_x, text_y), text, font=font, fill=0)
+            
+            # Apply contrast enhancement to text image to make it more black and white
+            # Convert to numpy array for processing
+            img_array = np.array(image)
+            
+            # Calculate image statistics
+            min_val = np.min(img_array)
+            max_val = np.max(img_array)
+            mean_val = np.mean(img_array)
+            
+            # Log the text image statistics for debugging
+            logging.debug(f"Text image statistics - Min: {min_val}, Max: {max_val}, Mean: {mean_val}")
+            
+            # Use stronger contrast for text to ensure crisp edges
+            contrast_factor = 15.0  # Higher value = more contrast
+            midpoint = mean_val  # Use mean as midpoint for better adaptive contrast
+            
+            # Apply sigmoid contrast enhancement
+            # Normalize to 0-1 range first
+            normalized = (img_array.astype(float) - min_val) / (max_val - min_val if max_val > min_val else 1)
+            # Apply sigmoid function
+            enhanced = 1.0 / (1.0 + np.exp(-contrast_factor * (normalized - midpoint/255.0)))
+            # Scale back to 0-255
+            enhanced = (enhanced * 255).astype(np.uint8)
+            
+            # Convert back to PIL Image
+            image = Image.fromarray(enhanced)
+            
             if hflip == 1:
                 image = image.transpose(Image.FLIP_LEFT_RIGHT)
             
@@ -157,23 +185,108 @@ def create_spectrogram(text=None, image_path=None, output_file="spectrogram.wav"
         with wave.open(output_file, 'w') as f:
             f.setparams((1, 2, sampleRate, int(sampleRate * duration), "NONE", "Uncompressed"))
             edge_size = int(width * 0.05)
+            
+            # Create a gentler window function that preserves more of the image
+            # Use a modified Blackman window only at the edges
             window = np.ones(width)
-            edge = np.hamming(edge_size * 2)
+            edge = np.blackman(edge_size * 2)
             window[:edge_size] = edge[:edge_size]
             window[-edge_size:] = edge[edge_size:]
-
+            
+            # Analyze the image to determine appropriate thresholds
+            pixel_values = []
+            for h in range(height):
+                for w in range(width):
+                    pixel_val = im.getpixel((w, h))
+                    pixel_values.append(pixel_val)
+            
+            # Calculate statistics for better thresholding
+            if pixel_values:
+                pixel_array = np.array(pixel_values)
+                min_val = np.min(pixel_array)
+                max_val = np.max(pixel_array)
+                mean_val = np.mean(pixel_array)
+                
+                # Log the image statistics for debugging
+                logging.debug(f"Image statistics - Min: {min_val}, Max: {max_val}, Mean: {mean_val}")
+                
+                # Calculate dynamic noise threshold based on image content
+                noise_threshold = min_val + ((max_val - min_val) * 0.03)  # 3% above minimum
+                
+                # Calculate contrast enhancement parameters based on image statistics
+                # For low contrast images, use more aggressive enhancement
+                dynamic_range = max_val - min_val
+                if dynamic_range < 100:  # Low contrast image
+                    contrast_factor = 15.0  # More aggressive contrast
+                    midpoint = mean_val  # Use mean as midpoint
+                else:
+                    contrast_factor = 10.0  # Standard contrast
+                    midpoint = 50.0  # Standard midpoint
+                
+                logging.debug(f"Dynamic noise threshold: {noise_threshold}")
+                logging.debug(f"Contrast factor: {contrast_factor}, Midpoint: {midpoint}")
+            else:
+                noise_threshold = 2.0  # Default if no pixel data
+                contrast_factor = 10.0  # Default contrast
+                midpoint = 50.0  # Default midpoint
+            
+            # Pre-process the entire image to reduce line-to-line variations
+            processed_image = np.zeros((height, width))
+            
+            # First pass: normalize and store all pixel values
+            for h in range(height):
+                for w in range(width):
+                    pixel_val = im.getpixel((w, h))
+                    
+                    # Normalize to 0-100 range based on the image's dynamic range
+                    if max_val > min_val:
+                        normalized_val = ((pixel_val - min_val) / (max_val - min_val)) * 100.0
+                    else:
+                        normalized_val = 0
+                        
+                    if invert:
+                        normalized_val = 100.0 - normalized_val
+                    
+                    # Apply contrast enhancement - make it more black and white
+                    # Use a sigmoid function to create a sharper transition
+                    enhanced_val = 100.0 / (1.0 + np.exp(-contrast_factor * (normalized_val - midpoint) / 100.0))
+                    
+                    processed_image[h, w] = enhanced_val * 1.2
+            
+            # Second pass: apply a very gentle smoothing
+            smoothed_image = np.copy(processed_image)
+            
+            # Apply a light blur only to reduce noise, not affect image details
+            for h in range(1, height-1):
+                for w in range(1, width-1):
+                    # Lighter 3x3 kernel with more weight on the center pixel
+                    kernel = np.array([
+                        [0.03, 0.05, 0.03],
+                        [0.05, 0.68, 0.05],
+                        [0.03, 0.05, 0.03]
+                    ])
+                    
+                    # Apply kernel
+                    val = 0
+                    for kh in range(3):
+                        for kw in range(3):
+                            val += processed_image[h+kh-1, w+kw-1] * kernel[kh, kw]
+                    
+                    smoothed_image[h, w] = val
+            
+            # Now generate audio from the smoothed image
             for h in range(height):
                 data = []
                 max_amplitude = 0
+                
                 for w in range(width):
-                    vol = (100.0 / 255.0) * im.getpixel((w, h))
-                    if invert:
-                        vol = 100.0 - vol
-                    vol = vol * 1.2
-                    if vol < 5.0:
+                    vol = smoothed_image[h, w]
+                    
+                    # Apply noise floor with dynamic threshold
+                    if vol < noise_threshold:
                         vol = 0
-                    elif vol < 10.0:
-                        vol = vol * ((vol - 5.0) / 5.0) ** 1.5
+                    
+                    # Apply the window function
                     vol = vol * window[w]
                     
                     # Calculate frequency based on mode and flip settings
@@ -204,6 +317,18 @@ def create_spectrogram(text=None, image_path=None, output_file="spectrogram.wav"
                 final_data = np.sum(data, axis=0) / (width * 1.0)
                 final_data = np.clip(final_data, -32767, 32767)
                 f.writeframes(array.array('h', [int(x) for x in final_data]).tobytes())
+                
+                # Store this line's data for blending with the next line
+                if 'prev_lines' in locals():
+                    prev_lines.append(final_data)
+                    if len(prev_lines) > max_prev_lines:
+                        prev_lines.pop(0)
+                
+                # Blend with previous lines
+                if 'prev_lines' in locals() and len(prev_lines) > 1:
+                    pass
+                    # Removed: blended_data = np.mean(prev_lines, axis=0)
+                    # Removed: f.writeframes(array.array('h', [int(x) for x in blended_data]).tobytes())
         
         if text and os.path.exists(temp_text_image):
             try:
