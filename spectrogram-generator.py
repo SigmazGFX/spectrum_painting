@@ -913,7 +913,7 @@ if __name__ == "__main__":
             
             # Create a minimal window to show just the waterfall display
             waterfall_window = Gtk.Window(title="Spectrogram Transmission")
-            waterfall_window.set_default_size(400, 200)
+            waterfall_window.set_default_size(400, 100)  # Reduced height from 200 to 100
             waterfall_window.set_border_width(10)
             waterfall_window.set_position(Gtk.WindowPosition.CENTER)  # Center on screen
             waterfall_window.set_decorated(False)  # Remove window decorations (title bar, etc.)
@@ -924,7 +924,7 @@ if __name__ == "__main__":
             
             # Add the waterfall display area
             waterfall_area = Gtk.DrawingArea()
-            waterfall_area.set_size_request(400, 150)
+            waterfall_area.set_size_request(400, 75)  # Reduced height from 150 to 75
             waterfall_area.connect("draw", temp_app.draw_waterfall)
             vbox.pack_start(waterfall_area, True, True, 0)
             
