@@ -109,6 +109,10 @@ def create_spectrogram(text=None, image_path=None, output_file="spectrogram.wav"
             # Scale back to 0-255
             enhanced = (enhanced * 255).astype(np.uint8)
             
+            # Binarize the image - convert to pure black and white
+            threshold = 128  # Midpoint threshold
+            enhanced = np.where(enhanced > threshold, 255, 0).astype(np.uint8)  # Ensure uint8 type
+            
             # Convert back to PIL Image
             image = Image.fromarray(enhanced)
             
@@ -311,7 +315,7 @@ def create_spectrogram(text=None, image_path=None, output_file="spectrogram.wav"
 
                 data = np.array(data)
                 if max_amplitude > 0:
-                    scale_factor = 30000.0 / max_amplitude
+                    scale_factor = (30000.0 / max_amplitude) * 0.75  # Reduced generated .WAV output level by 25%
                     data = data * scale_factor
                     data = np.clip(data, -30000, 30000)
                 final_data = np.sum(data, axis=0) / (width * 1.0)
